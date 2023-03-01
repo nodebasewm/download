@@ -16,3 +16,9 @@ Here you can find scripts and tools to assist EarthNode Operations
 - `./install_relay.sh -m MONIKER`
 ---
 For documentation on sentry node setup, refer to [Sentry-Validator Configuration](https://nodebasewm.github.io/docs/configuration/config/)
+
+## Ayaview local monitoring tool
+---
+Console based local monitoring tool to see stataus of your node and chain activity.
+
+
