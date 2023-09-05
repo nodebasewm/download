@@ -12,8 +12,14 @@ AYA_RPC_PORT1=36657
 # Define NODE2 details
 AYA_HOST2="peer2-501.worldmobilelabs.com"
 AYA_URL2="http://$AYA_HOST2"
-AYA_P2P_PORT2=36656
-AYA_RPC_PORT2=36658
+AYA_P2P_PORT2=26656
+AYA_RPC_PORT2=26657
+
+# Define NODE3 details (seeder1)
+AYA_HOST3="peer3-501.worldmobilelabs.com"
+AYA_URL3="http://$AYA_HOST3"
+AYA_P2P_PORT3=26656
+AYA_RPC_PORT3=26657
 
 # This function execute command with sudo if user not root
 sudo () {
@@ -78,7 +84,7 @@ if [[ -d "$aya_home" ]]; then
   echo "- [restart(R)] - erase all existing data and start from scratch"
   echo "- [cancel(C)] - cancel installation"
   while true; do
-      read -p "What's your choice? [sync(S)/restart(R)/cancel(C)]: " answer
+      read -p "What's your choice? [restart(R)/cancel(C)]: " answer
       case $answer in
           [Rr]* ) install_cleanup; break;;
           [Cc]* ) exit;;
@@ -145,9 +151,14 @@ mkdir -p "${aya_home}"/config
 cp ayad "${aya_home}"/cosmovisor/genesis/bin/ayad >/dev/null 2>&1
 cp cosmovisor "${aya_home}"/cosmovisor/cosmovisor >/dev/null 2>&1
 
+# Create symbolic links for the 'ayad' and 'cosmovisor' binaries
+ln -s $aya_home/cosmovisor/genesis $aya_home/cosmovisor/current >/dev/null 2>&1
+sudo ln -s $aya_home/cosmovisor/current/bin/ayad /usr/local/bin/ayad >/dev/null 2>&1
+sudo ln -s $aya_home/cosmovisor/cosmovisor /usr/local/bin/cosmovisor >/dev/null 2>&1
+
 # Initialize the node with the specified 'moniker'
 # If this fails, display an error message and call the 'contact_support()' function to exit
-if ! ./ayad init "${moniker}" --chain-id $CHAIN_ID --home ${aya_home} >"$logfile" 2>&1; then
+if ! ayad init "${moniker}" --chain-id $CHAIN_ID --home ${aya_home} >"$logfile" 2>&1; then
   echo "Failed to initialize the node "
   contact_support
 fi
@@ -186,6 +197,9 @@ sed -i -E "s|^(trust_period[[:space:]]+=[[:space:]]+).*$|\1\"302h0m0s\"|" "${aya
 
 # Temporary fix for https://github.com/cosmos/cosmos-sdk/issues/13766, will be removed after binary rebuild over Cosmos SDK v0.46.7 or above
 # Set snapshot interval >0 to activate snapshot manager
+#############################################
+# QUESTION - IS THIS REQUIRED ANY MORE????? #
+#############################################
 sed -i -E 's|^(snapshot-interval[[:space:]]+=[[:space:]]+).*$|\1999999999999|' ${aya_home}/config/app.toml
 
 # Set the log level to 'error' in the 'config.toml' file
@@ -204,6 +218,16 @@ if [ -z "${AYA_NODE2_ID}" ]; then
   echo "Failed to query AYA NODE2 ID over RPC request."
   contact_support
 fi
+
+# Get AYA NODE3 ID
+AYA_NODE3_ID=$(curl -s "${AYA_URL3}:${AYA_RPC_PORT3}/status" | jq -r .result.node_info.id)
+if [ -z "${AYA_NODE3_ID}" ]; then
+  echo "Failed to query AYA NODE3 ID over RPC request."
+  contact_support
+fi
+
+# Set the seed nodes in the 'config.toml' file
+sed -i -E "s|^(seeds[[:space:]]+=[[:space:]]+).*$|\1\"${AYA_NODE3_ID}@${AYA_HOST3}:${AYA_P2P_PORT3}\"|" "${aya_home}"/config/config.toml
 
 # Set the seed nodes in the 'config.toml' file
 sed -i -E "s|^(persistent_peers[[:space:]]+=[[:space:]]+).*$|\1\"${AYA_NODE1_ID}@${AYA_HOST1}:${AYA_P2P_PORT1},${AYA_NODE2_ID}@${AYA_HOST2}:${AYA_P2P_PORT2}\"|" "${aya_home}"/config/config.toml
@@ -235,7 +259,8 @@ if ! pgrep cosmovisor >/dev/null 2>&1; then
 fi
 
 # Get the address of the validator
-validator_address=$(./ayad tendermint show-address --home ${aya_home})
+validator_address=$(ayad tendermint show-address --home ${aya_home})
+
 # Use 'jq' to create a JSON object with the 'moniker', 'operator_address' and 'validator_address' fields
 jq --arg key0 'moniker' \
   --arg value0 "$moniker" \
@@ -255,7 +280,7 @@ authorized=false
 # While authorized is false, do the following:
 while [ "$authorized" = "false" ]; do
    # Get node status
-   node_status=$(./ayad status --home ${aya_home})
+   node_status=$(ayad status --home ${aya_home})
 
    #get catching up 
    catching_up=$(echo "$node_status"| jq '.SyncInfo.catching_up' | sed 's/"//g')
@@ -284,7 +309,9 @@ while [ "$authorized" = "false" ]; do
 done
 # Remove temporary fix for https://github.com/cosmos/cosmos-sdk/issues/13766
 # Set snapshot interval back to default (0) after installation
-sed -i -E 's|^(snapshot-interval[[:space:]]+=[[:space:]]+).*$|\10|' ${aya_home}/config/app.toml
+#############################################
+# QUESTION - IS THIS REQUIRED ANY MORE????? #
+#############################################sed -i -E 's|^(snapshot-interval[[:space:]]+=[[:space:]]+).*$|\10|' ${aya_home}/config/app.toml
 
 # Disable StateSync module to avoid possible problems on node restart
 sed -i -E "s|^(enable[[:space:]]+=[[:space:]]+).*$|\1false|" "${aya_home}"/config/config.toml
@@ -294,10 +321,6 @@ echo -e "\n-- All up to date! You can now connect your validator node to this se
 echo -e "\n-- Welcome to Aya sidechain :D \n\n"
 
 echo -e "-- Configuring your node to start on server startup\n"
-
-# Create symbolic links for the 'ayad' and 'cosmovisor' binaries
-sudo ln -s $aya_home/cosmovisor/current/bin/ayad /usr/local/bin/ayad >/dev/null 2>&1
-sudo ln -s $aya_home/cosmovisor/cosmovisor /usr/local/bin/cosmovisor >/dev/null 2>&1
 
 # Create systemd service file that describes the background service running the 'cosmovisor' daemon.
 sudo tee /etc/systemd/system/cosmovisor.service > /dev/null <<EOF
