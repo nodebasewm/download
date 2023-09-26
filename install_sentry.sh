@@ -1,19 +1,26 @@
-#!/usr/bin/env bash
+	#!/usr/bin/env bash
 
 # Define target network chain ID
 CHAIN_ID="aya_preview_501"
 
-# Define NODE1 details
+# Define NODE1 details (sentry1)
 AYA_HOST1="peer1-501.worldmobilelabs.com"
 AYA_URL1="http://$AYA_HOST1"
 AYA_P2P_PORT1=26656
 AYA_RPC_PORT1=36657
 
-# Define NODE2 details
+# Define NODE2 details (sentry2)
 AYA_HOST2="peer2-501.worldmobilelabs.com"
 AYA_URL2="http://$AYA_HOST2"
-AYA_P2P_PORT2=36656
-AYA_RPC_PORT2=36658
+AYA_P2P_PORT2=26656
+AYA_RPC_PORT2=26657
+
+# Define NODE3 details (seeder1)
+AYA_HOST3="peer3-501.worldmobilelabs.com"
+AYA_URL3="http://$AYA_HOST3"
+AYA_P2P_PORT3=26656
+AYA_RPC_PORT3=26657
+
 
 # This function execute command with sudo if user not root
 sudo () {
@@ -24,11 +31,10 @@ sudo () {
 # This function displays usage instructions for the script
 usage() {
   # Display Usage
-  echo "Aya Testnet \"$CHAIN_ID\" sentry node installation script."
-  echo
-  echo "Syntax: scriptTemplate -m <nodeMoniker>"
+  echo "Usage:"
+  echo "Syntax: install_sentry.sh -m <nodeMoniker>"
   echo "options:"
-  echo "m     Set the node moniker."
+  echo "m     Set the Sentry Node Moniker."
   echo
 }
 
@@ -47,7 +53,10 @@ install_cleanup() {
 
 
 # Show welcome message
-echo "Aya node Testnet \"$CHAIN_ID\" sentry node installation script."
+
+echo "****************************************************************************"
+echo "NODEX Services Aya Testnet \"$CHAIN_ID\" Sentry Node Installation Script"
+echo "****************************************************************************"
 
 # Set the path to the aya home directory
 aya_home=/opt/aya
@@ -67,27 +76,7 @@ sentry_json=${aya_home}/sentry.json
 # Clear the contents of the logfile
 true >"$logfile"
 
-# Set default value to bootstrap_node variable
-bootstrap_node=true
-
-# Check for previous installation traces
-# If present then ask user what to do: try to continue synchronization, start from scratch or cancel
-if [[ -d "$aya_home" ]]; then
-  echo "Your system already contain installation directory."
-  echo "If you had problems with installation then you have next options:"
-  echo "- [restart(R)] - erase all existing data and start from scratch"
-  echo "- [cancel(C)] - cancel installation"
-  while true; do
-      read -p "What's your choice? [sync(S)/restart(R)/cancel(C)]: " answer
-      case $answer in
-          [Rr]* ) install_cleanup; break;;
-          [Cc]* ) exit;;
-          * ) echo "Please answer [restart(R)/cancel(C)].";;
-      esac
-  done
-fi
-
-# If the 'jq' package is not installed, install it
+## If the 'jq' package is not installed, install it
 if ! dpkg -s jq >/dev/null 2>&1; then
   echo -e "-- Installing dependencies (jq package)\n"
   sudo apt-get -q install jq -y >/dev/null 2>&1
@@ -119,18 +108,62 @@ while getopts 'm:v' flag; do
   case "${flag}" in
   m) moniker="${OPTARG}" ;;
   *)
-    print_usage
+    usage
     exit 1
     ;;
   esac
 done
 
-# If the 'moniker' or 'account' variables are empty, display an error message and the usage before exiting the script
+# If the 'moniker' or  variables are empty, display an error message and the usage before exiting the script
 if [[ ! "$moniker" ]] ; then
   echo "Arguments  -m must be provided"
   usage
   exit 1
 fi
+
+# Check for previous installation traces
+# If present then ask user what to do: try to continue synchronization, start from scratch or cancel
+if [[ -d "$aya_home" ]]; then
+  echo "Your system already contains an installation directory."
+  echo "If you had problems with the installation then you have the following options:"
+  echo "- [restart(R)] - erase all existing data and start from scratch"
+  echo "- [cancel(C)] - cancel installation"
+  echo " WARNING: Erasing wil remove all installation without recovery!"
+  echo " Make sure you backed up important files before doing so."
+  while true; do
+      read -p "What's your choice? [restart(R)/cancel(C)]: " answer
+      case $answer in
+          [Rr]* ) install_cleanup; break;;
+          [Cc]* ) exit;;
+          * ) echo "Please answer [restart(R)/cancel(C)].";;
+      esac
+  done
+fi
+
+echo ""
+echo "The following configuration will be used:"
+echo ""
+echo "RPC snapshot:"
+echo "-------------"
+echo "RPC_RELAY1 ${AYA_HOST1}:${AYA_RPC_PORT1}"
+echo "RPC_RELAY2 ${AYA_HOST2}:${AYA_RPC_PORT2}"
+echo ""
+echo "P2P seeder:"
+echo "-----------"
+echo "RPC_RELAY1 ${AYA_HOST3}:${AYA_P2P_PORT3}"
+echo ""
+echo "P2P persistent peers"
+echo "--------------------"
+echo "RPC_RELAY1 ${AYA_HOST1}:${AYA_P2P_PORT1}"
+echo "RPC_RELAY2 ${AYA_HOST2}:${AYA_P2P_PORT2}"
+echo ""
+
+read -r -p "Do you want to continue? [y/N] " response
+if ! [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+  exit
+fi
+
+echo "Creating installation directory ${aya_home} ..."
 
 # Create the necessary directories
 sudo mkdir -p $aya_home
@@ -145,6 +178,7 @@ mkdir -p "${aya_home}"/config
 cp ayad "${aya_home}"/cosmovisor/genesis/bin/ayad >/dev/null 2>&1
 cp cosmovisor "${aya_home}"/cosmovisor/cosmovisor >/dev/null 2>&1
 
+echo "Initializing the sentry node ${moniker} ..."
 # Initialize the node with the specified 'moniker'
 # If this fails, display an error message and call the 'contact_support()' function to exit
 if ! ./ayad init "${moniker}" --chain-id $CHAIN_ID --home ${aya_home} >"$logfile" 2>&1; then
@@ -152,11 +186,13 @@ if ! ./ayad init "${moniker}" --chain-id $CHAIN_ID --home ${aya_home} >"$logfile
   contact_support
 fi
 
+echo "Preparing the snapshot..."
+
 # Copy the 'genesis.json' file to the 'config' directory
 cp genesis.json "${aya_home}"/config/genesis.json
 
 # Value equal to snapshot creation interval
-INTERVAL=15000
+INTERVAL=100
 
 # Get latest block height on chain
 LATEST_HEIGHT=$(curl -s "${AYA_URL1}:${AYA_RPC_PORT1}/block" | jq -r .result.block.header.height)
@@ -172,6 +208,8 @@ if [ -z "${TRUST_HASH}" ]; then
   echo "Failed to query trusted block hash over RPC request."
   contact_support
 fi
+
+echo "Snapshot will start at block height ${BLOCK_HEIGHT} with interval ${INTERVAL}"
 
 # Enable StateSync module, to speed up node initial bootstrap
 sed -i -E "s|^(enable[[:space:]]+=[[:space:]]+).*$|\1true|" "${aya_home}"/config/config.toml
@@ -205,6 +243,16 @@ if [ -z "${AYA_NODE2_ID}" ]; then
   contact_support
 fi
 
+# Get AYA NODE3 ID
+AYA_NODE3_ID=$(curl -s "${AYA_URL3}:${AYA_RPC_PORT3}/status" | jq -r .result.node_info.id)
+if [ -z "${AYA_NODE3_ID}" ]; then
+  echo "Failed to query AYA NODE3 ID over RPC request."
+  contact_support
+fi
+
+# Set the seed nodes in the 'config.toml' file
+sed -i -E "s|^(seeds[[:space:]]+=[[:space:]]+).*$|\1\"${AYA_NODE3_ID}@${AYA_HOST3}:${AYA_P2P_PORT3}\"|" "${aya_home}"/config/config.toml
+
 # Set the seed nodes in the 'config.toml' file
 sed -i -E "s|^(persistent_peers[[:space:]]+=[[:space:]]+).*$|\1\"${AYA_NODE1_ID}@${AYA_HOST1}:${AYA_P2P_PORT1},${AYA_NODE2_ID}@${AYA_HOST2}:${AYA_P2P_PORT2}\"|" "${aya_home}"/config/config.toml
 
@@ -223,6 +271,8 @@ export DAEMON_ALLOW_DOWNLOAD_BINARIES=true
 
 # Set soft file descriptors limit for session (default: 1024)
 ulimit -Sn 4096
+
+echo "Starting cosmovisor to start the snapshot process. You can check logs at ${cosmovisor_logfile}"
 
 # Start 'cosmovisor'. Append output to log file. Run in the background so script can continue.
 "${aya_home}"/cosmovisor/cosmovisor run start --home ${aya_home} &>>"${cosmovisor_logfile}" &
@@ -279,12 +329,12 @@ while [ "$authorized" = "false" ]; do
     if [ "$sync_progress" -eq "0" ]; then sync_progress="0000"; fi
     # If the balance of the operator address not contain 'uswmt' denomination, print a message and sleep for 60 seconds
     echo -e "\e[1A\e[K Still syncing... Progress: ${sync_progress:0:-2}.${sync_progress: -2}% Height: ${chain_current_block_height} Last update: $(date)"
-    sleep 60
+    sleep 10
   fi
 done
 # Remove temporary fix for https://github.com/cosmos/cosmos-sdk/issues/13766
 # Set snapshot interval back to default (0) after installation
-sed -i -E 's|^(snapshot-interval[[:space:]]+=[[:space:]]+).*$|\10|' ${aya_home}/config/app.toml
+sed -i -E 's|^(snapshot-interval[[:space:]]+=[[:space:]]+).*$|\1100|' ${aya_home}/config/app.toml
 
 # Disable StateSync module to avoid possible problems on node restart
 sed -i -E "s|^(enable[[:space:]]+=[[:space:]]+).*$|\1false|" "${aya_home}"/config/config.toml
@@ -310,7 +360,7 @@ After=network-online.target
 [Service]
 User=$USER
 # Start the 'cosmovisor' daemon with the 'run start' command and write output to 'aya.log' file
-ExecStart=$(which cosmovisor) run start --home "${aya_home}" &>>"${aya_home}/logs/aya.log"
+ExecStart=$(which cosmovisor) run start --home "${aya_home}" "
 # Restart the service if it fails
 Restart=always
 # Restart the service after 3 seconds if it fails
@@ -330,8 +380,16 @@ Environment="DAEMON_RESTART_AFTER_UPGRADE=true"
 WantedBy=multi-user.target
 EOF
 
+
 # Reload the Systemd daemon
 sudo systemctl daemon-reload
+
 # Enable the 'cosmovisor' service to start on system boot
 sudo systemctl enable cosmovisor
+sudo systemctl stop cosmovisor
+sudo systemctl start cosmovisor
+
+
+
+
 
