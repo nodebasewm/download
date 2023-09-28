@@ -7,7 +7,7 @@ CHAIN_ID="aya_preview_501"
 AYA_HOST1="peer1-501.worldmobilelabs.com"
 AYA_URL1="http://$AYA_HOST1"
 AYA_P2P_PORT1=26656
-AYA_RPC_PORT1=36657
+AYA_RPC_PORT1=26657
 
 # Define NODE2 details (sentry2)
 AYA_HOST2="peer2-501.worldmobilelabs.com"
